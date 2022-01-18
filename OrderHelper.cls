@@ -1,12 +1,21 @@
-public class OrderHelper {
+public without sharing class OrderHelper {
+
+    /**
+     * @name AfterUpdate
+     * @description 
+     * @param List<Order> newList
+     * @param List<Order> oldList
+     * @return void
+    **/
     public static void AfterUpdate(List<Order> newList, List<Order> oldList){
         Set<Id> orderIds = new Set<Id>();
         for ( Integer i=0; i<newList.size(); i++ ){
-            if (newList[i].Status == Constants.ACTIVATED_ORDER_STATUS && oldList[i].Status != Constants.ACTIVATED_ORDER_STATUS){
+            if ( newList[i].Status == constants.ACTIVATED_ORDER_STATUS && oldList[i].Status != constants.ACTIVATED_ORDER_STATUS ){
                 orderIds.add(newList[i].Id);
             }
         }
-        RollUpOrderItems(orderIds);
+        if(orderIds.size() > 0)
+            RollUpOrderItems(orderIds);
     }
 
     /**
@@ -16,29 +25,34 @@ public class OrderHelper {
      * @return void
     **/
     public static void RollUpOrderItems(Set<Id> activatedOrderIds){
-        //ToDo: Declare a Map named "productMap" of Ids to Product2 records
-        Map<Id,Product2> productMap = new Map<Id,Product2>();
-        Set<Id> productIds = new Set<Id>();
+        Map<Id,Product2> productMap;
+        List<Id> productIds = new List<Id>();
+        try{
+            for(OrderItem OP : [SELECT Id, Product2Id, OrderId FROM OrderItem WHERE OrderId IN: activatedOrderIds]){
+                if(OP.Product2Id != null)
+                    productIds.add(OP.Product2Id);
+            }
+        }catch(EXception ex){
         
-        //ToDo: Loop through a query of OrderItems related to the activatedOrderIds
-        for(OrderItem oi : [SELECT Id, Product2Id, Product2.Quantity_Ordered__c, Quantity FROM OrderItem
-                            WHERE OrderId IN :activatedOrderIds]){
-            productIds.add(oi.Product2Id);                         
+        }
+        if(productIds.size() > 0){
+            //ToDo: Declare a Map named "productMap" of Ids to Product2 records
+            productMap =  new Map<Id,Product2>([Select id,Quantity_Ordered__c from product2 where id in :productIds]);
+        
         }
         
-        //ToDo: Populate the map with the Id of the related Product2 as the key and Product2 record as the value
-        productMap = new Map<Id, Product2>([SELECT Id, Quantity_Ordered__c FROM Product2 WHERE Id IN :productIds]);
+        if(!productMap.isEmpty()){
+            AggregateResult[] groupedResult = [Select Product2Id,sum(Quantity) totalQuantity 
+                                                from OrderItem 
+                                                where product2Id in :productMap.keySet() group by product2Id];
         
-        AggregateResult[] groupedResult = [SELECT Product2Id, SUM(Quantity) activatedQuantity FROM OrderItem
-                                             WHERE Product2Id IN :productMap.keySet() GROUP BY Product2Id];
         
-        //ToDo: Loop through a query that aggregates the OrderItems related to the Products in the ProductMap keyset
-        for(AggregateResult ar : groupedResult){
-            productMap.get((String)ar.get('Product2Id')).Quantity_Ordered__c = Integer.valueOf(ar.get('activatedQuantity'));
+            for(AggregateResult result : groupedResult){
+                productMap.get((String)result.get('Product2Id')).Quantity_Ordered__c = Integer.valueOf(result.get('totalQuantity'));
+            }
+            
+            update productMap.values();
         }
-        
-        //ToDo: Perform an update on the records in the productMap
-        update productMap.values();
     }
 
 }
